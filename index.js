@@ -1,21 +1,28 @@
-
-
 /**
  * Uses the `produce` function to produce values until the `predicate` returns false.
- * If supplied, each value is transformed by `transform` before being yielded.
  *
  * @param {Function} produce produces the next value
  * @param {Function} predicate return true if the production should continue
- * @param {Function} transform transforms the produced value, defaults to identity
  */
-function* produceWhile(produce, predicate, transform = value => value) {
-  while(true) {
-    const value = produce()
-    if (predicate(value) !== true) {
-      break
-    }
+function* produceWhile(produce, predicate) {
+  let value = produce()
+  while(predicate(value)) {
+    yield value
+    value = produce()
+  }
+}
 
-    yield transform(value)
+/**
+ * Creates a new generator which wraps `generator` and applied `mapper` to each value.
+ *
+ * @param {Generator} generator
+ * @param {Function} mapper
+ */
+function* mappedGenerator(generator, mapper) {
+  let result = generator.next()
+  while(!result.done) {
+    yield mapper(result.value)
+    result = generator.next()
   }
 }
 
@@ -25,32 +32,36 @@ function* produceWhile(produce, predicate, transform = value => value) {
  *
  * @param {Array of Iterables} iterables an array of Iterable objects.
  */
-function zip(...iterables) {
+function* zip(...iterables) {
   const iterators = iterables.map(iterable => iterable[Symbol.iterator]())
-  const zipper = produceWhile(() => iterators.map(iterator => iterator.next()),
-                              value => value.find(v => v.done) === undefined,
-                              value => value.map(v => v.value))
-  return [...zipper]
+
+  const producer = produceWhile(() => iterators.map(iterator => iterator.next()),
+                                value => value.every(v => !v.done))
+
+  yield* mappedGenerator(producer,
+                         value => value.map(v => v.value))
 }
+// Creates a random seed that can be used with `randomInts`
+const randomSeed = () => Math.floor(Math.random() * 1000)
 
 /**
  * Inifinite random number generator producing values between lower bound and upper bound
  *
- * @param {integer} lower lower bound
- * @param {integer} upper upper bound
+ * @param {Int} lower lower bound
+ * @param {Int} upper upper bound
+ * @param {Int} seed optional seed
  */
-function* randomInts(lower, upper) {
+function* randomInts(lower, upper, seed = randomSeed()) {
   while(true) {
-    yield Math.round(lower + Math.random() * (upper - lower))
+    const x = Math.sin(seed++) * 10000;
+    const random = x - Math.floor(x)
+    yield Math.round(lower + random * (upper - lower))
   }
 }
 
-/**
- * Generator simulating 3d6 (three six sided dice)
- */
-function* threeD6() {
-  yield* randomInts(3, 18)
-}
+const d20 = randomInts(1, 20)
+d20.next().value // 13
+d20.next().value // 1 - oh no, a fumble!
 
 /**
  * Rolls 3d6 for each of the D&D character attributes and returns an array of pairs with the attribute and rolled value.
@@ -58,7 +69,7 @@ function* threeD6() {
 function rollCharacter() {
   const attributes = ['Strength', 'Constituion', 'Dexterity', 'Intelligence', 'Wisdom', 'Charisma']
 
-  return zip(attributes, threeD6())
+  return [...zip(attributes, randomInts(3, 18))]
 }
 
 console.log(rollCharacter())
